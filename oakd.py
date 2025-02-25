@@ -1,5 +1,6 @@
 import depthai as dai
 from tracker import Tracker
+import cv2 as cv
 
 
 class OAKD:
@@ -27,22 +28,21 @@ class OAKD:
         self.stereo.setLeftRightCheck(True)
         self.stereo.setSubpixel(False)
 
-        camRgb.setPreviewSize(preview_size)
-        camRgb.setInterleaved(False)
-        camRgb.setFps(fps)
-
         # Linking
         monoLeft.out.link(self.stereo.left)
         monoRight.out.link(self.stereo.right)
 
         xoutDepth = pipeline.create(dai.node.XLinkOut)
         xoutDepth.setStreamName("depth")
-        self.stereo.disparity.link(xoutDepth.input)
+        self.stereo.depth.link(xoutDepth.input)
 
         xoutDisparity = pipeline.create(dai.node.XLinkOut)
         xoutDisparity.setStreamName("disp")
         self.stereo.disparity.link(xoutDisparity.input)
 
+        camRgb.setPreviewSize(640, 480)
+        camRgb.setInterleaved(False)
+        camRgb.setFps(fps)
         xoutRgb = pipeline.create(dai.node.XLinkOut)
         xoutRgb.setStreamName("rgb")
         camRgb.preview.link(xoutRgb.input)
@@ -67,17 +67,23 @@ class OAKD:
         self.tracker = Tracker(model, conf_threshold)
 
     def get_frame(self):
+        """Gets the rgb frame, disparity frame and depth data
+
+        Returns: A tuple containing (rgbFrame, dispFrame, depthData)
+        Any of the data members of the tuple can be None
+
+        """
         inRgb = self.rgbQueue.get()
         inDisp = self.dispQ.get()
-        depthData = self.depthQ.get()
+        self.depth_data = self.depthQ.get()
         (rgbFrame, dispFrame) = (None, None)
         if inRgb:
-            self.curr_rgbFrame = inRgb.CvFrame()
+            self.curr_rgbFrame = inRgb.getCvFrame()
             rgbFrame = self.curr_rgbFrame
         if inDisp:
             self.curr_dispFrame = inDisp.getCvFrame()
             dispFrame = self.curr_dispFrame
-        return (rgbFrame, dispFrame, depthData)
+        return (rgbFrame, dispFrame, self.depth_data)
 
     def track(self):
         """This function must be called only after calling the get_frame function on every
