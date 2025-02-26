@@ -1,4 +1,5 @@
 from ultralytics import YOLO
+import cv2 as cv
 
 
 class Tracker:
@@ -12,8 +13,8 @@ class Tracker:
 
         Args: The frame to use the tracker on
 
-        Returns: A list of all the detections contained as a tuple of (data.xyxy, confidence) where
-        data.xyxy = (x1, y1, x2, y2) of the bounding boxes
+        Returns: A list of all the detections contained as a tuple of ((x1, y1, x2, y2), confidence)
+        where data.xyxy = (x1, y1, x2, y2) of the bounding boxes
         """
         results = self.model.track(
             source=frame,
@@ -22,14 +23,16 @@ class Tracker:
             persist=True,
         )
 
-        detections = []
+        detections = list()
         if results is None:
-            return []
+            return list()
         for r in results:
             if r.boxes is None:
                 continue
-            for box in r.boxes:
-                data = box.cpu().numpy()
-                if data.conf < self.conf_threshold:
+            detection = r.boxes.cpu().numpy()
+            for box in detection:
+                if box.conf < self.conf_threshold:
                     continue
-                detections.append((data.xyxy, float(data.conf)))
+                x1, y1, x2, y2 = box.xyxy[0]
+                detections.append(((x1, y1, x2, y2), box.conf))
+        return detections
