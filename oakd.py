@@ -3,7 +3,7 @@ from ultralytics.data.augment import Tuple
 from tracker import Tracker
 import cv2 as cv
 import numpy as np
-from ultralytics import YOLO
+import time
 
 
 class OAKD:
@@ -14,8 +14,11 @@ class OAKD:
         fps=60,
         conf_threshold=0.75,
     ):
+        self.curr_rgbFrame = None
+        self.curr_dispFrame = None
+        self.depth_data = None
         width, height = preview_size
-        self.timeout = 1.0 / 1000.0
+        self.timeout = (1.0 / fps) * 1000000
         pipeline = dai.Pipeline()
 
         # Define sources and outputs
@@ -84,10 +87,24 @@ class OAKD:
         Returns: A tuple containing (rgbFrame, dispFrame, depthData)
         Any of the data members of the tuple can be None
 
+        If the rgbFrame or the dispFrame or the depthData wasn't received
+        without the specified timeout, any of the data can be None. So checking
+        this case is necessary
+
         """
-        inRgb = self.rgbQueue.get()
-        inDisp = self.dispQ.get()
-        self.depth_data = self.depthQ.get()
+        initial_time = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        inRgb, inDisp, self.depth_data = (None, None, None)
+        while (
+            time.clock_gettime_ns(time.CLOCK_BOOTTIME) - initial_time
+        ) < self.timeout:
+            if not inRgb:
+                inRgb = self.rgbQueue.tryGet()
+            if not inDisp:
+                inDisp = self.dispQ.tryGet()
+            if not self.depth_data:
+                self.depth_data = self.depthQ.tryGet()
+            if inRgb and inDisp and self.depth_data:
+                break
         (rgbFrame, dispFrame) = (None, None)
         if inRgb:
             self.curr_rgbFrame = inRgb.getCvFrame()
@@ -110,18 +127,19 @@ class OAKD:
         Args: The window names of the rgb frame and disparity frame
         in that order
         """
-        cv.imshow(rgb_window, self.curr_rgbFrame)
-        cv.imshow(disp_window, self.curr_dispFrame)
+        if self.curr_rgbFrame is not None:
+            cv.imshow(rgb_window, self.curr_rgbFrame)
+
+        if self.curr_dispFrame is not None:
+            cv.imshow(disp_window, self.curr_dispFrame)
 
     def track(self):
         """This function must be called only after calling the get_frame function on every
         iteration of the while loop
 
-
-        Returns: A list of all the detections contained as a tuple of (data.xyxy, confidence) where
-        data.xyxy = (x1, y1, x2, y2) of the bounding boxes
-
+        Returns: A list of all the detections contained as a tuple of ((x1, y1, x2, y2), confidence)
         """
+
         return self.tracker.track(self.curr_rgbFrame)
 
     def add_bbox_to_frame(self, x1: int, y1: int, x2: int, y2: int):
@@ -131,4 +149,5 @@ class OAKD:
         actually display the frame
 
         """
-        cv.rectangle(self.curr_rgbFrame, (x1, y1), (x2, y2), (123, 222, 70), 2)
+        if self.curr_rgbFrame is not None:
+            cv.rectangle(self.curr_rgbFrame, (x1, y1), (x2, y2), (123, 222, 70), 2)
