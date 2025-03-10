@@ -8,11 +8,13 @@ class Tracker:
 
     def track(self, frame):
         """
-        Conducts object tracking on the specified input source using the registered trackers
+        Conducts object tracking on the specified input source using
+        the registered trackers
 
         Args: The frame to use the tracker on
 
-        Returns: A list of all the detections contained as a tuple of ((x1, y1, x2, y2), confidence)
+        Returns: A list of all the detections contained as a tuple of
+        ((x1, y1, x2, y2), confidence)
         """
         results = self.model.track(
             source=frame,

@@ -1,4 +1,5 @@
 __pycache__/ 
+.mypy_cache/
 best.pt
 main.py
 temp.py

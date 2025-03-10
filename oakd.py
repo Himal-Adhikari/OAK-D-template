@@ -1,9 +1,9 @@
 import depthai as dai
-from ultralytics.data.augment import Tuple
 from tracker import Tracker
 import cv2 as cv
 import numpy as np
 import time
+from host_spatial import HostSpatialsCalc
 
 
 class OAKD:
@@ -28,9 +28,11 @@ class OAKD:
         camRgb = pipeline.create(dai.node.ColorCamera)
 
         # Properties
-        monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        monoLeft.setResolution(
+            dai.MonoCameraProperties.SensorResolution.THE_400_P)
         monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-        monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        monoRight.setResolution(
+            dai.MonoCameraProperties.SensorResolution.THE_400_P)
         monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
         monoLeft.setFps(fps)
         monoRight.setFps(fps)
@@ -72,10 +74,13 @@ class OAKD:
         self.depthQ = self.device.getOutputQueue(
             name="depth", maxSize=4, blocking=False
         )
-        self.dispQ = self.device.getOutputQueue(name="disp", maxSize=4, blocking=False)
+        self.dispQ = self.device.getOutputQueue(
+            name="disp", maxSize=4, blocking=False)
         self.rgbQueue = self.device.getOutputQueue(
             name="rgb", maxSize=4, blocking=False
         )
+
+        self.spatial_calculator = HostSpatialsCalc(self.device)
 
         # Initializing tracker
         if model_path is not None:
@@ -92,19 +97,9 @@ class OAKD:
         this case is necessary
 
         """
-        initial_time = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-        inRgb, inDisp, self.depth_data = (None, None, None)
-        while (
-            time.clock_gettime_ns(time.CLOCK_BOOTTIME) - initial_time
-        ) < self.timeout:
-            if not inRgb:
-                inRgb = self.rgbQueue.tryGet()
-            if not inDisp:
-                inDisp = self.dispQ.tryGet()
-            if not self.depth_data:
-                self.depth_data = self.depthQ.tryGet()
-            if inRgb and inDisp and self.depth_data:
-                break
+        inRgb = self.rgbQueue.get()
+        inDisp = self.dispQ.get()
+        self.depth_data = self.depthQ.get()
         (rgbFrame, dispFrame) = (None, None)
         if inRgb:
             self.curr_rgbFrame = inRgb.getCvFrame()
@@ -134,10 +129,11 @@ class OAKD:
             cv.imshow(disp_window, self.curr_dispFrame)
 
     def track(self):
-        """This function must be called only after calling the get_frame function on every
-        iteration of the while loop
+        """This function must be called only after calling the get_frame
+        function on every iteration of the while loop
 
-        Returns: A list of all the detections contained as a tuple of ((x1, y1, x2, y2), confidence)
+        Returns: A list of all the detections contained as a tuple of
+        ((x1, y1, x2, y2), confidence)
         """
 
         return self.tracker.track(self.curr_rgbFrame)
@@ -150,4 +146,15 @@ class OAKD:
 
         """
         if self.curr_rgbFrame is not None:
-            cv.rectangle(self.curr_rgbFrame, (x1, y1), (x2, y2), (123, 222, 70), 2)
+            cv.rectangle(self.curr_rgbFrame, (int(x1), int(y1)),
+                         (int(x2), int(y2)), (123, 222, 70), 2)
+
+    def get_coordinate(self, x1: int, y1: int, x2: int = 0, y2: int = 0):
+        """Returns the spatial coordinate and the centroid of the given roi
+           Returns: A tuple of the form (spatials, centroid)
+           where spatials = (x, y, z) and centroid = (x, y)
+        """
+        if x2 == 0 and y2 == 0:
+            return self.spatial_calculator.calc_spatials(self.depth_data, [int(x1), int(y1)])
+        else:
+            return self.spatial_calculator.calc_spatials(self.depth_data, [int(x1), int(y1), int(x2), int(y2)])
